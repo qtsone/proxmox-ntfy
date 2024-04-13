@@ -8,6 +8,6 @@ services:
       NTFY_USER: ${NTFY_USER}
       NTFY_PASS: ${NTFY_PASS}
       PROXMOX_API_URL: ${PROXMOX_API_URL}
-      PROXMOX_PASSWORD: ${PROXMOX_PASSWORD}
+      PROXMOX_PASS: ${PROXMOX_PASS}
       LOG_LEVEL: INFO
     restart: always
