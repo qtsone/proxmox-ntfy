@@ -1,0 +1,19 @@
+name: Push to Docker Hub
+
+on:
+  push:
+    tags:
+      - '**'
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Build and Push Docker Image
+      uses: qts-cloud/actions/docker/build@main
+      with:
+        image-name: <dockerhub-username>/<image-name>
+        # other inputs as needed
+      secrets:
+        DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+        DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}

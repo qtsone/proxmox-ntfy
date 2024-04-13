@@ -1,0 +1,20 @@
+name: PR Checks
+
+on:
+  pull_request:
+    paths:
+      - 'docker/**'
+      - 'src/**'
+
+jobs:
+  pr-checks:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Docker Tests
+      uses: qts-cloud/actions/docker/tests@main
+      with:
+        image-name: <dockerhub-username>/<image-name>
+        # other inputs as needed
+      secrets:
+        DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+        DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
