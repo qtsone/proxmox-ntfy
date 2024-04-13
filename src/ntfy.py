@@ -56,6 +56,7 @@ queue = asyncio.Queue()
 processed_tasks = set()
 
 async def send_notification(title, tags, message):
+    logging.info(f"Sending notification: Title={title}, Tags={tags}")
     async with aiohttp.ClientSession() as session:
         headers = {
             "Title": title,
@@ -69,7 +70,18 @@ async def send_notification(title, tags, message):
             auth = aiohttp.BasicAuth(NTFY_USER, NTFY_PASS)
         else:
             auth = None
-        await session.post(NTFY_SERVER_URL, data=message, headers=headers, auth=auth)
+        
+        try:
+            async with session.post(NTFY_SERVER_URL, data=message, headers=headers, auth=auth) as response:
+                logging.debug(f"POST Response: Status={response.status}, Text={await response.text()}")
+                response.raise_for_status()  # Raise an exception for 4xx or 5xx status codes
+                logging.info(f"Notification sent successfully: Title={title}, Tags={tags}")
+        except aiohttp.ClientResponseError as e:
+            logging.error(f"Error sending notification: {e}")
+            logging.debug(f"Response Headers: {e.headers}")
+            logging.debug(f"Response Text: {e.message}")
+        except Exception as e:
+            logging.error(f"Error sending notification: {e}")
 
 
 async def get_proxmox_tasks(proxmox, since):
