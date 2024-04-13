@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.0.1](https://github.com/qtsone/proxmox-ntfy/compare/v1.0.0...v1.0.1) (2024-04-13)
+
+
+### Bug Fixes
+
+* **release:** use deploy key ([7903d03](https://github.com/qtsone/proxmox-ntfy/commit/7903d03e76729adb27a075100a42930a9437ccb1))
+
 # 1.0.0 (2024-04-13)
 
 
