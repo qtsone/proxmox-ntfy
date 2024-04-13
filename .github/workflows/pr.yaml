@@ -14,6 +14,7 @@ jobs:
       uses: qts-cloud/actions/docker/tests@main
       with:
         image-name: ibacalu/proxmox-ntfy
+        dockerfile-path: docker/Dockerfile
         dockerhub-username: ${{ secrets.DOCKERHUB_USERNAME }}
         dockerhub-token: ${{ secrets.DOCKERHUB_TOKEN }}
         # other inputs as needed
