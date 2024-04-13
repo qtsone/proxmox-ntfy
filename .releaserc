@@ -1,19 +1,29 @@
 {
-  "branch": "master",
+  "branches": [
+    "+([0-9])?(.{+([0-9]),x}).x",
+    {
+      "name": "main",
+      "channel": "latest"
+    }
+  ],
   "plugins": [
     "@semantic-release/commit-analyzer",
     "@semantic-release/release-notes-generator",
+    "@semantic-release/github",
     [
       "@semantic-release/changelog",
       {
-        "changelogFile": "CHANGELOG.md"
+        "changelogFile": "CHANGELOG.md",
+        "changelogTitle": "# Changelog\n\nAll notable changes to this project will be documented in this file."
       }
     ],
     [
-      "@semantic-release/gitlab", 
+      "@semantic-release/git",
       {
-        "assets": ["CHANGELOG.md"],
-        "message": "chore(release): ${nextRelease.version}\n\n${nextRelease.notes}"
+        "assets": [
+          "CHANGELOG.md"
+        ],
+        "message": "chore(release): version ${nextRelease.version}\n\n${nextRelease.notes}"
       }
     ]
   ]
