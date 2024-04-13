@@ -12,7 +12,7 @@ jobs:
     - name: Build and Push Docker Image
       uses: qts-cloud/actions/docker/build@main
       with:
-        image-name: <dockerhub-username>/<image-name>
+        image-name: ibacalu/proxmox-ntfy
         # other inputs as needed
       secrets:
         DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}

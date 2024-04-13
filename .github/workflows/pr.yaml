@@ -13,7 +13,7 @@ jobs:
     - name: Docker Tests
       uses: qts-cloud/actions/docker/tests@main
       with:
-        image-name: <dockerhub-username>/<image-name>
+        image-name: ibacalu/proxmox-ntfy
         # other inputs as needed
       secrets:
         DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
