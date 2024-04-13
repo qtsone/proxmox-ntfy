@@ -1,0 +1,23 @@
+name: Release
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'docker/**'
+      - 'src/**'
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write       # to be able to publish a GitHub release
+      issues: write         # to be able to comment on released issues
+      pull-requests: write  # to be able to comment on released pull requests
+    steps:
+      - name: Semantic Release
+        uses: qts-cloud/actions/release@main
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          ssh-key: ${{ secrets.COMMIT_KEY }}

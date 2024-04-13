@@ -1,0 +1,13 @@
+version: '3'
+
+services:
+  proxmox-ntfy:
+    image: ibacalu/proxmox-ntfy
+    environment:
+      NTFY_SERVER_URL: ${NTFY_SERVER_URL}
+      NTFY_USER: ${NTFY_USER}
+      NTFY_PASS: ${NTFY_PASS}
+      PROXMOX_API_URL: ${PROXMOX_API_URL}
+      PROXMOX_PASSWORD: ${PROXMOX_PASSWORD}
+      LOG_LEVEL: INFO
+    restart: always
