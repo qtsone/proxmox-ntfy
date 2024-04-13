@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+# [1.1.0](https://github.com/qtsone/proxmox-ntfy/compare/v1.0.2...v1.1.0) (2024-04-13)
+
+
+### Features
+
+* **notifications:** implement logging ([f01bc8f](https://github.com/qtsone/proxmox-ntfy/commit/f01bc8fc2ff59846f1b8f11e8ee3581c80f026e8))
+
 ## [1.0.2](https://github.com/qtsone/proxmox-ntfy/compare/v1.0.1...v1.0.2) (2024-04-13)
 
 
