@@ -204,7 +204,7 @@ if __name__ == "__main__":
     # Proxmox Details
     proxmox_api = os.getenv('PROXMOX_API_URL', "pve:8006")
     proxmox_user = os.getenv('PROXMOX_USER', "root@pam")
-    proxmox_pass = os.getenv('PROXMOX_PASSWORD', "root")
+    proxmox_pass = os.getenv('PROXMOX_PASS', "root")
 
     logging.basicConfig(
         format='%(asctime)s %(levelname)s %(message)s',
