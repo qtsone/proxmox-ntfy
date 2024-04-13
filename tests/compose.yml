@@ -2,7 +2,10 @@ version: '3'
 
 services:
   proxmox-ntfy:
-    image: ibacalu/proxmox-ntfy:latest
+    image: ibacalu/proxmox-ntfy
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
     environment:
       NTFY_SERVER_URL: ${NTFY_SERVER_URL}
       NTFY_USER: ${NTFY_USER}
