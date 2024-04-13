@@ -2,6 +2,7 @@ name: PR Checks
 
 on:
   pull_request:
+    branches: [ main ]
     paths:
       - 'docker/**'
       - 'src/**'
@@ -9,9 +10,11 @@ on:
 jobs:
   pr-checks:
     runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
     steps:
     - name: Docker Tests
-      uses: qts-cloud/actions/docker/tests@main
+      uses: qts-cloud/actions/docker/tests@feat/test-messages
       with:
         image-name: ibacalu/proxmox-ntfy
         dockerfile-path: docker/Dockerfile
