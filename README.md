@@ -1,5 +1,7 @@
 # Proxmox Ntfy
 
+![Preview](docs/images/screenshot.png)
+
 This project provides a Python script that monitors Proxmox tasks and sends notifications using the Ntfy service.
 
 ## Features
@@ -39,17 +41,16 @@ Run the Docker container with the desired environment variables:
 ```sh
 docker run -d --name proxmox-ntfy 
     -e NTFY_SERVER_URL="https://ntfy.sh" \
-    -e NTFY_TOKEN="your_token" \
     -e PROXMOX_API_URL="your_proxmox_url" \
     -e PROXMOX_USER="your_username" \
     -e PROXMOX_PASS="your_password" \
-ibacalu/proxmox-ntfy
+ibacalu/proxmox-ntfy:latest
 ```
 
 Alternatively, you can use Docker Compose to start the container:
 
 ```sh
-docker-compose up -d
+docker-compose -f docker/compose.yml up -d
 ```
 
 The script will start monitoring Proxmox tasks and send notifications to the configured Ntfy server.
