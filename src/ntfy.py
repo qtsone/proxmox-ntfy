@@ -1,4 +1,3 @@
-
 import os
 import logging
 import aiohttp
@@ -17,39 +16,6 @@ NTFY_SERVER_URL = os.getenv('NTFY_SERVER_URL', "https://ntfy.sh/CA9FFE70-B1B0-4C
 NTFY_TOKEN = os.getenv('NTFY_TOKEN', None)
 NTFY_USER = os.getenv('NTFY_USER', None)
 NTFY_PASS = os.getenv('NTFY_PASS', None)
-
-# Create a cache class
-class Cache(object):
-    """
-    Cache Requests
-    """
-    color_id = 0
-    clr = "\033[0m"
-    colors = (
-        "\033[0m",      # RST
-        "\033[31m",     # RED
-        "\033[92m",     # GREEN
-        "\033[33m",     # YELLOW
-        "\033[34m",     # BLUE
-        "\033[35m",     # MAGENTA
-        "\033[36m",     # CYAN
-        "\033[37m",     # WHITE
-        "\033[95m",     # VIVID
-    )
-
-    def __init__(self):
-        Cache.color_id += 1
-        if Cache.color_id not in range(1, len(Cache.colors)):
-            Cache.color_id = 1
-
-        self.color_id = Cache.color_id
-
-    def color(self):
-        return self.colors[self.color_id]
-
-    def clr(self):
-        return self.colors[0]
-
 
 task_handlers = {}
 queue = asyncio.Queue()
@@ -84,7 +50,6 @@ async def send_notification(title, tags, message):
         except Exception as e:
             logging.error(f"Error sending notification: {e}")
 
-
 async def get_proxmox_tasks(proxmox, since):
     nodes = proxmox.nodes.get()
     tasks = []
@@ -94,18 +59,15 @@ async def get_proxmox_tasks(proxmox, since):
         tasks.extend(node_tasks)
     return tasks
 
-
 async def get_task_status(proxmox, node, task_id):
     status = proxmox.nodes(node).tasks(task_id).status.get()
     logging.debug(f"STATUS [{task_id}] {status}")
     return status
 
-
 async def get_task_log(proxmox, node, task_id):
     log = proxmox.nodes(node).tasks(task_id).log.get()
     logging.debug(f"LOG [{task_id}] {log}")
     return [log_entry['t'] for log_entry in log if log_entry['t']]
-
 
 async def monitor_task(proxmox, task):
     task_id = task['upid']
@@ -155,13 +117,11 @@ async def monitor_task(proxmox, task):
     logging.info(f"Task {task_id} processed.")
     return task_id
 
-
 async def fetch_tasks(proxmox):
     logging.info(f'Fetching tasks...')
     current_time = int(time.time())
 
     while True:
-        c = Cache()
         try:
             tasks = await get_proxmox_tasks(proxmox, current_time)
 
@@ -179,24 +139,18 @@ async def fetch_tasks(proxmox):
 
         await asyncio.sleep(10)
 
-
 async def process_tasks(proxmox):
     """Continually process tasks from the queue."""
     while True:
-        c = Cache()
         task = await queue.get()
         task_id = task['upid']
-        logging.info(
-            c.color() +
-            f"Processing {task_id} from queue..." +
-            c.clr())
+        logging.info(f"Processing {task_id} from queue...")
 
         if not task_handlers.get(task_id):
             task_handler = asyncio.create_task(monitor_task(proxmox, task))
             task_handler.set_name(task_id)
             task_handlers[task_id] = task_handler
             logging.info(f"Started handler for task {task_id}")
-
 
 async def monitor(proxmox_api='pve',proxmox_user='root@pam', proxmox_pass='root', verify_ssl=False):
     logging.info(f"Monitoring {proxmox_api}...")
@@ -210,7 +164,6 @@ async def monitor(proxmox_api='pve',proxmox_user='root@pam', proxmox_pass='root'
 
     await fetch_task
     await process_task
-
 
 if __name__ == "__main__":
     log_level = os.getenv('LOG_LEVEL', "DEBUG")
