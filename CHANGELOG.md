@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.1.1](https://github.com/qtsone/proxmox-ntfy/compare/v1.1.0...v1.1.1) (2024-07-09)
+
+
+### Bug Fixes
+
+* **ci:** use pr-checks environment ([9256d78](https://github.com/qtsone/proxmox-ntfy/commit/9256d78f002c4dc02b482b10b8b26ede1d85d980))
+* **src:** remove Cache class ([47ce286](https://github.com/qtsone/proxmox-ntfy/commit/47ce286ba24d482ed34a06d9ef99b13e4c02ab29))
+
 # [1.1.0](https://github.com/qtsone/proxmox-ntfy/compare/v1.0.2...v1.1.0) (2024-04-13)
 
 
