@@ -10,6 +10,7 @@ on:
 jobs:
   pr-checks:
     runs-on: ubuntu-latest
+    environment: pr-checks
     permissions:
       pull-requests: write
     steps:
@@ -20,4 +21,3 @@ jobs:
         dockerfile-path: docker/Dockerfile
         dockerhub-username: ${{ secrets.DOCKERHUB_USERNAME }}
         dockerhub-token: ${{ secrets.DOCKERHUB_TOKEN }}
-        # other inputs as needed
