@@ -66,6 +66,7 @@ async def send_notification(title, tags, message):
 
         if NTFY_TOKEN:
             headers['Authorization'] = f'Bearer {NTFY_TOKEN}'
+            auth = None
         elif NTFY_USER and NTFY_PASS:
             auth = aiohttp.BasicAuth(NTFY_USER, NTFY_PASS)
         else:
