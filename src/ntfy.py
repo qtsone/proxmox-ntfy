@@ -64,6 +64,31 @@ def parse_task_id(task_id: str) -> Tuple[str, str]:
         raise ValueError(f"Invalid task ID format: {task_id}") from e
 
 
+def has_token_auth(token_name: Optional[str], token_value: Optional[str]) -> bool:
+    """Check if token authentication is configured.
+    
+    Args:
+        token_name: API token name
+        token_value: API token value
+        
+    Returns:
+        True if both token_name and token_value are provided
+    """
+    return bool(token_name and token_value)
+
+
+def has_password_auth(password: Optional[str]) -> bool:
+    """Check if password authentication is configured.
+    
+    Args:
+        password: Proxmox password
+        
+    Returns:
+        True if password is provided
+    """
+    return bool(password)
+
+
 async def send_notification(title: str, tags: str, message: str) -> None:
     """Send a notification to the Ntfy server.
     
@@ -337,7 +362,7 @@ def create_proxmox_client(proxmox_host: str, proxmox_port: int, proxmox_user: st
     Returns:
         Authenticated ProxmoxAPI instance
     """
-    use_token = bool(proxmox_token_name and proxmox_token_value)
+    use_token = has_token_auth(proxmox_token_name, proxmox_token_value)
     
     if use_token:
         logging.info(f"Using Proxmox API token authentication: user={proxmox_user}, token_name={proxmox_token_name}")
@@ -425,7 +450,7 @@ async def monitor(proxmox_host: Optional[str] = None, proxmox_port: Optional[int
     logging.info(f"Monitoring {proxmox_host}:{proxmox_port}...")
     
     # Determine authentication method
-    use_token = bool(proxmox_token_name and proxmox_token_value)
+    use_token = has_token_auth(proxmox_token_name, proxmox_token_value)
     # Authentication method is already logged in create_proxmox_client()
 
     try:
@@ -533,8 +558,8 @@ if __name__ == "__main__":
         sys.exit(1)
     
     # Second validation: Check if PROXMOX_USER is set but no valid authentication is provided
-    has_password = bool(proxmox_pass)
-    has_token = bool(proxmox_token_name and proxmox_token_value)
+    has_password = has_password_auth(proxmox_pass)
+    has_token = has_token_auth(proxmox_token_name, proxmox_token_value)
     if not has_password and not has_token:
         logging.error("PROXMOX_USER is set, but no valid authentication method is configured")
         logging.error("You must provide either:")
