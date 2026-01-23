@@ -32,7 +32,7 @@ The script can be configured using the following environment variables:
 - `NTFY_PASS`: Ntfy password (optional)
 - `LOG_LEVEL`: Logging level (default: "INFO")
 - `PROXMOX_API_URL`: Proxmox API URL (mandatory)
-- `PROXMOX_PORT`: Port under which Proxmox is reachable, probably 8006, if you're connecting via IP and 80 or 443, if Proxmox is behind a Reverse Proxy (mandatory)
+- `PROXMOX_PORT`: Port under which Proxmox is reachable, probably 8006, if you're connecting via IP. Set port 80 or 443, if Proxmox is behind a Reverse Proxy (mandatory)
 - `VERIFY_SSL`: Whether proxmoxer should verify the SSL signature of the Proxmox host
 - `PROXMOX_USER`: Proxmox username (mandatory)
 
@@ -58,7 +58,7 @@ To generate a Proxmox API token:
    - **Token ID**: Give the token a name (e.g., `proxmox-ntfy`). This value is used as `PROXMOX_TOKEN_NAME` in your configuration
    - **Comment**: Optionally add a comment describing the token's purpose
    - **Expiration**: Optionally set an expiration date for the token
-   - **Privilege Separation**: Either disable privilege separation or set permissions afterward accordingly. See the [Proxmox documentation](https://pve.proxmox.com/pve-docs/pveum.html#pveum_token) for details on privilege separation and token permissions
+   - **Privilege Separation**: Either disable privilege separation or set permissions afterward accordingly.
 6. Click **"Add"** to create the token
 7. **Important**: Copy the **Secret** value immediately - this is only shown once and is used as `PROXMOX_TOKEN_VALUE` in your configuration
 8. Update your `.env` file with the token details and test the configuration
