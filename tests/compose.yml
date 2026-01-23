@@ -16,4 +16,4 @@ services:
       PROXMOX_TOKEN_VALUE: ${PROXMOX_TOKEN_VALUE}
       VERIFY_SSL: ${VERIFY_SSL:-False}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
-    restart: always
+    restart: no
