@@ -395,7 +395,7 @@ async def get_allowed_nodes(proxmox: proxmoxer.ProxmoxAPI, nodes: List[Dict[str,
                            use_token: bool) -> Optional[List[str]]:
     """Verify permissions and determine which nodes can be monitored.
     
-    For token authentication, verifies that the token has permission to access tasks.
+    Verifies that the authenticated user/token has permission to access tasks.
     Node-level permission filtering is handled automatically by get_proxmox_tasks()
     which will skip nodes without permission.
     
@@ -408,18 +408,14 @@ async def get_allowed_nodes(proxmox: proxmoxer.ProxmoxAPI, nodes: List[Dict[str,
         None to monitor all nodes (node-level filtering happens during task fetching)
         
     Raises:
-        PermissionError: If API token lacks required permissions
+        PermissionError: If user/token lacks required permissions
     """
-    if use_token:
-        logging.info("Checking API token permissions...")
-        await check_permissions(proxmox, nodes)
-        logging.info("API token permissions verified: will monitor all accessible nodes")
-        # Return None to monitor all nodes - get_proxmox_tasks() will handle node-level filtering
-        return None
-    else:
-        # For password auth, we assume full permissions (user's own permissions)
-        logging.debug("Password authentication: skipping explicit permission check, monitoring all nodes")
-        return None  # Monitor all nodes
+    auth_method = "API token" if use_token else "password"
+    logging.info(f"Checking {auth_method} authentication permissions...")
+    await check_permissions(proxmox, nodes)
+    logging.info(f"{auth_method.capitalize()} authentication permissions verified: will monitor all accessible nodes")
+    # Return None to monitor all nodes - get_proxmox_tasks() will handle node-level filtering
+    return None
 
 
 async def monitor(proxmox_host: Optional[str] = None, proxmox_port: Optional[int] = None, 
@@ -467,7 +463,14 @@ async def monitor(proxmox_host: Optional[str] = None, proxmox_port: Optional[int
     except PermissionError:
         # Re-raise permission errors as-is (they already have helpful messages)
         raise
+    except ResourceException as e:
+        # Handle Proxmox API errors specifically
+        error_msg = str(e)
+        logging.error(f"Proxmox API error: {error_msg}")
+        logging.error("Please verify your credentials and token permissions")
+        raise ConnectionError(f"Unable to connect to Proxmox API at {proxmox_host}:{proxmox_port}: {error_msg}")
     except Exception as e:
+        # Handle connection and other errors
         error_msg = str(e)
         # Check if it's a connection-related error
         is_connection_error = any(err in error_msg.lower() for err in [
@@ -507,8 +510,8 @@ if __name__ == "__main__":
         sys.exit(1)
     
     # Validate Proxmox configuration
-    proxmox_api_url = os.getenv('PROXMOX_API_URL', None)
-    if not proxmox_api_url:
+    proxmox_host = os.getenv('PROXMOX_API_URL', None)
+    if not proxmox_host:
         logging.error("Mandatory environment variable PROXMOX_API_URL is not set")
         sys.exit(1)
 
@@ -540,10 +543,10 @@ if __name__ == "__main__":
         logging.error("For token authentication, set PROXMOX_TOKEN_NAME and PROXMOX_TOKEN_VALUE")
         sys.exit(1)
     
-    logging.info(f"Proxmox configuration: proxmox_api_url={proxmox_api_url}, proxmox_port={proxmox_port}, proxmox_user={proxmox_user}, proxmox_token_name={proxmox_token_name}")
+    logging.info(f"Proxmox configuration: proxmox_host={proxmox_host}, proxmox_port={proxmox_port}, proxmox_user={proxmox_user}, proxmox_token_name={proxmox_token_name}")
 
     try:
-        asyncio.run(monitor(proxmox_api_url, proxmox_port, proxmox_user, proxmox_pass,
+        asyncio.run(monitor(proxmox_host, proxmox_port, proxmox_user, proxmox_pass,
                            proxmox_token_name, proxmox_token_value, verify_ssl))
     except PermissionError as e:
         # Permission errors are already logged with helpful messages
