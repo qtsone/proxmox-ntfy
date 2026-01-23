@@ -23,53 +23,6 @@ NTFY_PASS = os.getenv('NTFY_PASS', None)
 SYS_AUDIT_PERMISSION = "Sys.Audit"
 DEFAULT_TASK_TIMEOUT = 1800
 
-# Error messages
-ERROR_MESSAGES = {
-    'insufficient_permissions': """Required permissions for this application:
-  - Sys.Audit permission on the datacenter or node level
-    (This allows reading system audit logs and task information)
-
-If you're using an API token with 'Privilege Separation' enabled:
-  1. Go to Datacenter > Permissions > API Tokens
-  2. Edit your token
-  3. Assign the 'Sys.Audit' role to the token at:
-     - Datacenter level: / (gives access to all nodes)
-     - Or node level: /nodes/{node_name} (gives access to specific node)
-  4. Ensure the associated user also has the required permissions
-     (Token permissions are the intersection of user and token permissions)
-
-Alternatively, you can disable 'Privilege Separation' to grant
-the token all permissions that the associated user has.""",
-    
-    'permission_check_failed': """This indicates that the token lacks permissions to query its own permissions.
-
-If you're using an API token with 'Privilege Separation' enabled:
-  1. Go to Datacenter > Permissions > API Tokens
-  2. Edit your token
-  3. Assign the 'Sys.Audit' role to the token
-  4. Or disable 'Privilege Separation' to grant full user permissions""",
-    
-    'connection_failed': """Please check:
-  1. Firewall rules: Is the Proxmox server allowing connections from this container?
-  2. Service status: Is the Proxmox API service running on port {port}?
-  3. Network access: Can the container reach {host}:{port}?
-  4. Authentication: Verify your credentials are correct"""
-}
-
-
-def _log_error_message(message_key: str, **kwargs) -> None:
-    """Log a multi-line error message from ERROR_MESSAGES.
-    
-    Args:
-        message_key: Key in ERROR_MESSAGES dictionary
-        **kwargs: Format arguments for the message (e.g., port, host)
-    """
-    message = ERROR_MESSAGES.get(message_key, f"Unknown error message key: {message_key}")
-    if kwargs:
-        message = message.format(**kwargs)
-    for line in message.strip().split('\n'):
-        logging.error(line)
-
 
 task_handlers = {}
 queue = asyncio.Queue()
@@ -149,8 +102,7 @@ async def check_permissions(proxmox: proxmoxer.ProxmoxAPI, nodes: List[Dict[str,
         
         if is_permission_error:
             logging.error(f"Permission check failed: Cannot access tasks on node {first_node}: {error_msg}")
-            logging.error("")
-            _log_error_message('insufficient_permissions')
+            logging.error(f"API token lacks required {SYS_AUDIT_PERMISSION} permission. Assign Sys.Audit role at Datacenter > Permissions > API Tokens")
             raise PermissionError(f"API token lacks required {SYS_AUDIT_PERMISSION} permission to access tasks")
         else:
             # Other ResourceException - re-raise
@@ -481,8 +433,7 @@ async def monitor(proxmox_host: Optional[str] = None, proxmox_port: Optional[int
         logging.error(f"Failed to connect to Proxmox API: {error_msg}")
         
         if is_connection_error:
-            logging.error(f"Connection is being refused by {proxmox_host}:{proxmox_port}")
-            _log_error_message('connection_failed', host=proxmox_host, port=proxmox_port)
+            logging.error(f"Connection failed to {proxmox_host}:{proxmox_port}. Check firewall rules, service status, and network access")
         else:
             logging.error(f"This appears to be an authentication or API error, not a network issue")
             logging.error(f"Please verify your credentials and token permissions")
@@ -537,10 +488,26 @@ if __name__ == "__main__":
     proxmox_pass = os.getenv('PROXMOX_PASS', None)
     proxmox_token_name = os.getenv('PROXMOX_TOKEN_NAME', None)
     proxmox_token_value = os.getenv('PROXMOX_TOKEN_VALUE', None)
-    if not proxmox_pass and not proxmox_token_name and not proxmox_token_value:
-        logging.error("Mandatory environment variable PROXMOX_PASS or PROXMOX_TOKEN_NAME or PROXMOX_TOKEN_VALUE is not set")
-        logging.error("For password authentication, set PROXMOX_PASS")
-        logging.error("For token authentication, set PROXMOX_TOKEN_NAME and PROXMOX_TOKEN_VALUE")
+    
+    # First validation: Check if token fields are incomplete
+    has_token_name = bool(proxmox_token_name)
+    has_token_value = bool(proxmox_token_value)
+    if (has_token_name and not has_token_value) or (has_token_value and not has_token_name):
+        logging.error("PROXMOX_USER is set, but token authentication is incomplete")
+        if has_token_name and not has_token_value:
+            logging.error("PROXMOX_TOKEN_NAME is set but PROXMOX_TOKEN_VALUE is missing")
+        else:
+            logging.error("PROXMOX_TOKEN_VALUE is set but PROXMOX_TOKEN_NAME is missing")
+        sys.exit(1)
+    
+    # Second validation: Check if PROXMOX_USER is set but no valid authentication is provided
+    has_password = bool(proxmox_pass)
+    has_token = bool(proxmox_token_name and proxmox_token_value)
+    if not has_password and not has_token:
+        logging.error("PROXMOX_USER is set, but no valid authentication method is configured")
+        logging.error("You must provide either:")
+        logging.error("  - PROXMOX_PASS for password authentication, OR")
+        logging.error("  - Both PROXMOX_TOKEN_NAME and PROXMOX_TOKEN_VALUE for token authentication")
         sys.exit(1)
     
     logging.info(f"Proxmox configuration: proxmox_host={proxmox_host}, proxmox_port={proxmox_port}, proxmox_user={proxmox_user}, proxmox_token_name={proxmox_token_name}")
