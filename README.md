@@ -43,6 +43,26 @@ If you want to use API Token authentication, set:
 - `PROXMOX_TOKEN_NAME`: Token name set during creation, dont include the "root@pam"
 - `PROXMOX_TOKEN_VALUE`: The secret that is displayed after creation
 
+**Note:** If both password (`PROXMOX_PASS`) and token (`PROXMOX_TOKEN_NAME` + `PROXMOX_TOKEN_VALUE`) authentication methods are configured, token authentication takes precedence and the password will be ignored.
+
+#### Generating a Proxmox API Token
+
+To generate a Proxmox API token:
+
+1. Log in to your Proxmox web interface
+2. Select **"Datacenter"** from the left sidebar
+3. Navigate to **"Permissions"** → **"API Tokens"**
+4. Click **"Add"** to create a new token
+5. Configure the token:
+   - **User ID**: Select the user the token should be valid for (e.g., `root@pam`). This value is used as `PROXMOX_USER` in your configuration
+   - **Token ID**: Give the token a name (e.g., `proxmox-ntfy`). This value is used as `PROXMOX_TOKEN_NAME` in your configuration
+   - **Comment**: Optionally add a comment describing the token's purpose
+   - **Expiration**: Optionally set an expiration date for the token
+   - **Privilege Separation**: Either disable privilege separation or set permissions afterward accordingly. See the [Proxmox documentation](https://pve.proxmox.com/pve-docs/pveum.html#pveum_token) for details on privilege separation and token permissions
+6. Click **"Add"** to create the token
+7. **Important**: Copy the **Secret** value immediately - this is only shown once and is used as `PROXMOX_TOKEN_VALUE` in your configuration
+8. Update your `.env` file with the token details and test the configuration
+
 ### Required Permissions
 
 When using API Token authentication, the token requires the following permissions:
