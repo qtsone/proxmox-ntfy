@@ -112,154 +112,31 @@ async def send_notification(title: str, tags: str, message: str) -> None:
         except Exception as e:
             logging.error(f"Error sending notification: {e}")
 
-def check_node_permission(permissions: Dict[str, Any], node_name: str, has_dc_permission: bool = False) -> bool:
-    """Check if a node has Sys.Audit permission.
+async def check_permissions(proxmox: proxmoxer.ProxmoxAPI, nodes: List[Dict[str, Any]]) -> None:
+    """Verify that the API token has permission to access tasks.
     
-    Args:
-        permissions: Dictionary of permissions from Proxmox API
-        node_name: Name of the node to check
-        has_dc_permission: Whether datacenter-level permission exists
-        
-    Returns:
-        True if node has permission, False otherwise
-    """
-    if has_dc_permission:
-        return True
-    
-    # Check node-specific permissions
-    node_path = f"/nodes/{node_name}"
-    if node_path in permissions:
-        perms = permissions[node_path]
-        return has_permission_in_value(perms, SYS_AUDIT_PERMISSION)
-    
-    return False
-
-def has_permission_in_value(perms: Any, perm_name: str) -> bool:
-    """Check if a permission name exists in a permission value.
-    
-    Handles different permission value formats from Proxmox API:
-    - List: ['Sys.Audit', 'VM.Audit']
-    - Dict: {'Sys.Audit': True} or {'Sys.Audit': 1}
-    - String: 'Sys.Audit'
-    
-    Args:
-        perms: Permission value (list, dict, or string)
-        perm_name: Permission name to check for
-        
-    Returns:
-        True if permission exists, False otherwise
-    """
-    if isinstance(perms, list):
-        return perm_name in perms
-    elif isinstance(perms, dict):
-        # Check if permission name exists as a key in the dict
-        return perm_name in perms
-    elif isinstance(perms, str):
-        return perm_name in perms
-    return False
-
-
-def _check_datacenter_permission(permissions: Dict[str, Any]) -> bool:
-    """Check if Sys.Audit permission exists at datacenter level.
-    
-    Args:
-        permissions: Dictionary of permissions from Proxmox API
-        
-    Returns:
-        True if datacenter-level permission exists, False otherwise
-    """
-    if '/' in permissions:
-        dc_perms = permissions['/']
-        if has_permission_in_value(dc_perms, SYS_AUDIT_PERMISSION):
-            logging.info(f"Found {SYS_AUDIT_PERMISSION} permission at datacenter level (applies to all nodes)")
-            return True
-    return False
-
-
-def _check_node_permissions(permissions: Dict[str, Any], nodes: List[Dict[str, Any]], 
-                           has_dc_permission: bool) -> Tuple[List[str], List[str]]:
-    """Check which nodes have Sys.Audit permission.
-    
-    Args:
-        permissions: Dictionary of permissions from Proxmox API
-        nodes: List of node dictionaries from proxmox.nodes.get()
-        has_dc_permission: Whether datacenter-level permission exists
-        
-    Returns:
-        Tuple of (allowed_nodes, excluded_nodes) lists
-    """
-    allowed_nodes = []
-    excluded_nodes = []
-    
-    for node in nodes:
-        node_name = node['node']
-        if check_node_permission(permissions, node_name, has_dc_permission):
-            allowed_nodes.append(node_name)
-        else:
-            excluded_nodes.append(node_name)
-    
-    return allowed_nodes, excluded_nodes
-
-
-def _handle_permission_error(error_msg: str, nodes: List[Dict[str, Any]]) -> Tuple[List[str], str]:
-    """Handle permission check errors and log appropriate messages.
-    
-    Args:
-        error_msg: Error message from exception
-        nodes: List of nodes that were checked
-        
-    Returns:
-        Tuple of (empty list, error_message)
-    """
-    logging.error(f"Permission check failed: {error_msg}")
-    logging.error(f"Checked {len(nodes)} node(s): {', '.join([n['node'] for n in nodes])}")
-    logging.error("")
-    _log_error_message('insufficient_permissions')
-    return [], error_msg
-
-
-async def check_permissions(proxmox: proxmoxer.ProxmoxAPI, nodes: List[Dict[str, Any]]) -> Tuple[List[str], Optional[str]]:
-    """Check which nodes the current user/token has Sys.Audit permission for.
+    Uses a simple approach: try to fetch tasks from the first available node.
+    If this fails with a 403 error, the token lacks required permissions.
+    Node-level permission filtering is handled by get_proxmox_tasks().
     
     Args:
         proxmox: Authenticated ProxmoxAPI instance
         nodes: List of node dictionaries from proxmox.nodes.get()
         
-    Returns:
-        Tuple of (allowed_node_names, error_message):
-        - allowed_node_names: List of node names with Sys.Audit permission
-        - error_message: String error if no nodes available, else None
-        
     Raises:
+        PermissionError: If API token lacks required permissions to access tasks
         ResourceException: For non-403 API errors
-        Exception: For unexpected errors
     """
     if not nodes:
-        return [], "No nodes found to check permissions"
+        raise PermissionError("No nodes found to check permissions")
     
+    # Try fetching tasks from the first node to verify we have permissions
+    # This is simpler than parsing the permissions API response
+    first_node = nodes[0]['node']
     try:
-        # Get the effective permissions for the current user/token
-        permissions = proxmox.access.permissions.get()
-        logging.debug(f"Retrieved permissions: {permissions}")
-        
-        # Check datacenter-level permission
-        has_dc_permission = _check_datacenter_permission(permissions)
-        
-        # Check node-level permissions
-        allowed_nodes, excluded_nodes = _check_node_permissions(permissions, nodes, has_dc_permission)
-        
-        # Report results
-        if allowed_nodes:
-            logging.info(f"Nodes with {SYS_AUDIT_PERMISSION} permission: {', '.join(allowed_nodes)}")
-            if excluded_nodes:
-                logging.warning(f"Nodes excluded from monitoring (no {SYS_AUDIT_PERMISSION} permission): {', '.join(excluded_nodes)}")
-                logging.warning(f"To monitor these nodes, assign '{SYS_AUDIT_PERMISSION}' role at /nodes/{{node_name}}")
-            return allowed_nodes, None
-        else:
-            # No nodes have permission
-            error_msg = f"{SYS_AUDIT_PERMISSION} permission not found for any node"
-            return _handle_permission_error(error_msg, nodes)
-            
+        # Try to fetch recent tasks (since=0 means all tasks)
+        proxmox.nodes(first_node).tasks.get(since=0, source="all")
+        logging.info(f"Permission check passed: API token can access tasks on node {first_node}")
     except ResourceException as e:
         error_msg = str(e)
         # Check status code if available, otherwise fall back to string matching
@@ -268,20 +145,16 @@ async def check_permissions(proxmox: proxmoxer.ProxmoxAPI, nodes: List[Dict[str,
             is_permission_error = e.status_code == 403
         else:
             # Fallback for older proxmoxer versions
-            is_permission_error = "403" in error_msg or "Forbidden" in error_msg or "Permission check failed" in error_msg
+            is_permission_error = "403" in error_msg or "Forbidden" in error_msg
         
         if is_permission_error:
-            logging.error(f"Permission check failed: Cannot access permissions endpoint: {error_msg}")
+            logging.error(f"Permission check failed: Cannot access tasks on node {first_node}: {error_msg}")
             logging.error("")
-            _log_error_message('permission_check_failed')
-            return [], error_msg
+            _log_error_message('insufficient_permissions')
+            raise PermissionError(f"API token lacks required {SYS_AUDIT_PERMISSION} permission to access tasks")
         else:
             # Other ResourceException - re-raise
             raise
-    except Exception as e:
-        # Re-raise other exceptions (connection issues, etc.)
-        logging.error(f"Unexpected error checking permissions: {e}")
-        raise
 
 async def get_proxmox_tasks(proxmox: proxmoxer.ProxmoxAPI, since: int, allowed_nodes: List[str]) -> List[Dict[str, Any]]:
     """Fetch Proxmox tasks from specified nodes.
@@ -520,7 +393,11 @@ def validate_connection(proxmox: proxmoxer.ProxmoxAPI, proxmox_host: str, proxmo
 
 async def get_allowed_nodes(proxmox: proxmoxer.ProxmoxAPI, nodes: List[Dict[str, Any]], 
                            use_token: bool) -> Optional[List[str]]:
-    """Determine which nodes can be monitored based on permissions.
+    """Verify permissions and determine which nodes can be monitored.
+    
+    For token authentication, verifies that the token has permission to access tasks.
+    Node-level permission filtering is handled automatically by get_proxmox_tasks()
+    which will skip nodes without permission.
     
     Args:
         proxmox: Authenticated ProxmoxAPI instance
@@ -528,18 +405,17 @@ async def get_allowed_nodes(proxmox: proxmoxer.ProxmoxAPI, nodes: List[Dict[str,
         use_token: Whether token authentication is being used
         
     Returns:
-        List of allowed node names, or None to monitor all nodes
+        None to monitor all nodes (node-level filtering happens during task fetching)
         
     Raises:
         PermissionError: If API token lacks required permissions
     """
     if use_token:
         logging.info("Checking API token permissions...")
-        allowed_nodes, perm_error = await check_permissions(proxmox, nodes)
-        if not allowed_nodes:
-            raise PermissionError(f"API token lacks required permissions to access tasks: {perm_error}")
-        logging.info(f"API token permissions verified: will monitor {len(allowed_nodes)} node(s)")
-        return allowed_nodes
+        await check_permissions(proxmox, nodes)
+        logging.info("API token permissions verified: will monitor all accessible nodes")
+        # Return None to monitor all nodes - get_proxmox_tasks() will handle node-level filtering
+        return None
     else:
         # For password auth, we assume full permissions (user's own permissions)
         logging.debug("Password authentication: skipping explicit permission check, monitoring all nodes")
