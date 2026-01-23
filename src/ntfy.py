@@ -21,6 +21,9 @@ SYS_AUDIT_PERMISSION = "Sys.Audit"
 DEFAULT_TASK_TIMEOUT = 1800
 TASK_STATUS_CHECK_INTERVAL = 3  # seconds
 TASK_FETCH_INTERVAL = 10  # seconds
+TASK_STATUS_STOPPED = "stopped"
+TASK_EXITSTATUS_OK = "OK"
+TASK_EXITSTATUS_TIMEOUT = "TIMEOUT"
 
 
 task_handlers: Dict[str, asyncio.Task] = {}
@@ -98,7 +101,16 @@ async def send_notification(title: str, tags: str, message: str) -> None:
         title: Notification title
         tags: Comma-separated tags for the notification
         message: Notification message body (Markdown supported)
+        
+    Raises:
+        ValueError: If title or message is None or empty
     """
+    # Validate required inputs
+    if not title or (title and not title.strip()):
+        raise ValueError("Title is required and cannot be empty")
+    if not message or (message and not message.strip()):
+        raise ValueError("Message is required and cannot be empty")
+    
     logging.info(f"Sending notification: Title={title}, Tags={tags}")
     async with aiohttp.ClientSession() as session:
         headers = {
@@ -250,8 +262,8 @@ async def monitor_task(proxmox: proxmoxer.ProxmoxAPI, task: Dict[str, Any]) -> s
         task_status = await get_task_status(proxmox, node, task_id)
         status = task_status.get('status', None)
         exitstatus = task_status.get('exitstatus', None)
-        if status == "stopped":
-            if exitstatus not in ["OK"]:
+        if status == TASK_STATUS_STOPPED:
+            if exitstatus not in [TASK_EXITSTATUS_OK]:
                 tags = f"warning,{node},{task['type']}"
             else:
                 tags = f"white_check_mark,{node},{task['type']}"
@@ -261,7 +273,7 @@ async def monitor_task(proxmox: proxmoxer.ProxmoxAPI, task: Dict[str, Any]) -> s
             elapsed_time = current_time - start_time
             if elapsed_time > timeout:
                 tags = f"warning,{node},{task['type']}"
-                exitstatus = "TIMEOUT"
+                exitstatus = TASK_EXITSTATUS_TIMEOUT
                 logging.warning(f"TIMEOUT [{uuid}] Timed out after {timeout} seconds.")
                 break
             else:
@@ -424,10 +436,10 @@ async def verify_permissions(proxmox: proxmoxer.ProxmoxAPI, nodes: List[Dict[str
     Raises:
         PermissionError: If user/token lacks required permissions
     """
-    auth_method = "API token" if use_token else "password"
+    auth_method = "API Token" if use_token else "Password"
     logging.info(f"Checking {auth_method} authentication permissions...")
     await check_permissions(proxmox, nodes)
-    logging.info(f"{auth_method.capitalize()} authentication permissions verified")
+    logging.info(f"{auth_method} authentication permissions verified")
 
 
 async def monitor(proxmox_host: Optional[str] = None, proxmox_port: Optional[int] = None, 
