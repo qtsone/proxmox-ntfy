@@ -550,7 +550,7 @@ if __name__ == "__main__":
     has_token_name = bool(proxmox_token_name)
     has_token_value = bool(proxmox_token_value)
     if (has_token_name and not has_token_value) or (has_token_value and not has_token_name):
-        logging.error("PROXMOX_USER is set, but token authentication is incomplete")
+        logging.error("Token authentication is incomplete")
         if has_token_name and not has_token_value:
             logging.error("PROXMOX_TOKEN_NAME is set but PROXMOX_TOKEN_VALUE is missing")
         else:
