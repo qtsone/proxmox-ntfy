@@ -18,6 +18,53 @@ NTFY_TOKEN = os.getenv('NTFY_TOKEN', None)
 NTFY_USER = os.getenv('NTFY_USER', None)
 NTFY_PASS = os.getenv('NTFY_PASS', None)
 
+# Error messages
+ERROR_MESSAGES = {
+    'insufficient_permissions': """Required permissions for this application:
+  - Sys.Audit permission on the datacenter or node level
+    (This allows reading system audit logs and task information)
+
+If you're using an API token with 'Privilege Separation' enabled:
+  1. Go to Datacenter > Permissions > API Tokens
+  2. Edit your token
+  3. Assign the 'Sys.Audit' role to the token at:
+     - Datacenter level: / (gives access to all nodes)
+     - Or node level: /nodes/{node_name} (gives access to specific node)
+  4. Ensure the associated user also has the required permissions
+     (Token permissions are the intersection of user and token permissions)
+
+Alternatively, you can disable 'Privilege Separation' to grant
+the token all permissions that the associated user has.""",
+    
+    'permission_check_failed': """This indicates that the token lacks permissions to query its own permissions.
+
+If you're using an API token with 'Privilege Separation' enabled:
+  1. Go to Datacenter > Permissions > API Tokens
+  2. Edit your token
+  3. Assign the 'Sys.Audit' role to the token
+  4. Or disable 'Privilege Separation' to grant full user permissions""",
+    
+    'connection_failed': """Please check:
+  1. Firewall rules: Is the Proxmox server allowing connections from this container?
+  2. Service status: Is the Proxmox API service running on port {port}?
+  3. Network access: Can the container reach {host}:{port}?
+  4. Authentication: Verify your credentials are correct"""
+}
+
+
+def _log_error_message(message_key: str, **kwargs) -> None:
+    """Log a multi-line error message from ERROR_MESSAGES.
+    
+    Args:
+        message_key: Key in ERROR_MESSAGES dictionary
+        **kwargs: Format arguments for the message (e.g., port, host)
+    """
+    message = ERROR_MESSAGES.get(message_key, f"Unknown error message key: {message_key}")
+    if kwargs:
+        message = message.format(**kwargs)
+    for line in message.strip().split('\n'):
+        logging.error(line)
+
 
 task_handlers = {}
 queue = asyncio.Queue()
@@ -117,34 +164,23 @@ async def check_permissions(proxmox, nodes):
             logging.error(f"Permission check failed: {error_msg}")
             logging.error(f"Checked {len(nodes)} node(s): {', '.join([n['node'] for n in nodes])}")
             logging.error("")
-            logging.error("Required permissions for this application:")
-            logging.error("  - Sys.Audit permission on the datacenter or node level")
-            logging.error("    (This allows reading system audit logs and task information)")
-            logging.error("")
-            logging.error("If you're using an API token with 'Privilege Separation' enabled:")
-            logging.error("  1. Go to Datacenter > Permissions > API Tokens")
-            logging.error("  2. Edit your token")
-            logging.error("  3. Assign the 'Sys.Audit' role to the token at:")
-            logging.error("     - Datacenter level: / (gives access to all nodes)")
-            logging.error("     - Or node level: /nodes/{node_name} (gives access to specific node)")
-            logging.error("  4. Ensure the associated user also has the required permissions")
-            logging.error("     (Token permissions are the intersection of user and token permissions)")
-            logging.error("")
-            logging.error("Alternatively, you can disable 'Privilege Separation' to grant")
-            logging.error("the token all permissions that the associated user has.")
+            _log_error_message('insufficient_permissions')
             return [], error_msg
             
     except ResourceException as e:
         error_msg = str(e)
-        if "403" in error_msg or "Forbidden" in error_msg or "Permission check failed" in error_msg:
+        # Check status code if available, otherwise fall back to string matching
+        is_permission_error = False
+        if hasattr(e, 'status_code'):
+            is_permission_error = e.status_code == 403
+        else:
+            # Fallback for older proxmoxer versions
+            is_permission_error = "403" in error_msg or "Forbidden" in error_msg or "Permission check failed" in error_msg
+        
+        if is_permission_error:
             logging.error(f"Permission check failed: Cannot access permissions endpoint: {error_msg}")
-            logging.error("This indicates that the token lacks permissions to query its own permissions.")
             logging.error("")
-            logging.error("If you're using an API token with 'Privilege Separation' enabled:")
-            logging.error("  1. Go to Datacenter > Permissions > API Tokens")
-            logging.error("  2. Edit your token")
-            logging.error("  3. Assign the 'Sys.Audit' role to the token")
-            logging.error("  4. Or disable 'Privilege Separation' to grant full user permissions")
+            _log_error_message('permission_check_failed')
             return [], error_msg
         else:
             # Other ResourceException - re-raise
@@ -167,7 +203,15 @@ async def get_proxmox_tasks(proxmox, since, allowed_nodes=None):
             tasks.extend(node_tasks)
         except ResourceException as e:
             error_msg = str(e)
-            if "403" in error_msg or "Forbidden" in error_msg:
+            # Check status code if available, otherwise fall back to string matching
+            is_permission_error = False
+            if hasattr(e, 'status_code'):
+                is_permission_error = e.status_code == 403
+            else:
+                # Fallback for older proxmoxer versions
+                is_permission_error = "403" in error_msg or "Forbidden" in error_msg
+            
+            if is_permission_error:
                 logging.warning(f"Lost permission to access tasks on node {node_name}: {error_msg}")
             else:
                 # Re-raise other ResourceExceptions
@@ -337,11 +381,7 @@ async def monitor(proxmox_host=None, proxmox_port=None, proxmox_user=None,
         
         if is_connection_error:
             logging.error(f"Connection is being refused by {proxmox_host}:{proxmox_port}")
-            logging.error(f"Please check:")
-            logging.error(f"  1. Firewall rules: Is the Proxmox server allowing connections from this container?")
-            logging.error(f"  2. Service status: Is the Proxmox API service running on port {proxmox_port}?")
-            logging.error(f"  3. Network access: Can the container reach {proxmox_host}:{proxmox_port}?")
-            logging.error(f"  4. Authentication: Verify your credentials are correct")
+            _log_error_message('connection_failed', host=proxmox_host, port=proxmox_port)
         else:
             logging.error(f"This appears to be an authentication or API error, not a network issue")
             logging.error(f"Please verify your credentials and token permissions")
