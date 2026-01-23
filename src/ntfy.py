@@ -292,6 +292,7 @@ async def process_tasks(proxmox: proxmoxer.ProxmoxAPI) -> None:
     """Continually process tasks from the queue.
     
     Creates monitoring tasks for each queued task and tracks them.
+    Automatically cleans up completed handlers to prevent memory leaks.
     
     Args:
         proxmox: Authenticated ProxmoxAPI instance
@@ -301,11 +302,22 @@ async def process_tasks(proxmox: proxmoxer.ProxmoxAPI) -> None:
         task_id = task['upid']
         logging.info(f"Processing {task_id} from queue...")
 
-        if not task_handlers.get(task_id):
-            task_handler = asyncio.create_task(monitor_task(proxmox, task))
-            task_handler.set_name(task_id)
-            task_handlers[task_id] = task_handler
-            logging.info(f"Started handler for task {task_id}")
+        # Check if already processing (exists and not done)
+        if task_id in task_handlers and not task_handlers[task_id].done():
+            logging.debug(f"Task {task_id} already being processed, skipping")
+            continue
+
+        # Create and track handler
+        task_handler = asyncio.create_task(monitor_task(proxmox, task))
+        task_handler.set_name(task_id)
+        task_handlers[task_id] = task_handler
+        
+        # Clean up completed handlers automatically
+        # Use default argument to capture task_id in closure
+        task_handler.add_done_callback(
+            lambda t, tid=task_id: task_handlers.pop(tid, None)
+        )
+        logging.info(f"Started handler for task {task_id}")
 
 
 def create_proxmox_client(proxmox_host: str, proxmox_port: int, proxmox_user: str,
