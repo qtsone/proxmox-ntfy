@@ -2,6 +2,32 @@
 
 All notable changes to this project will be documented in this file.
 
+
+## [2.0.0](https://github.com/qtsone/proxmox-ntfy/compare/v1.1.0...v2.0.0) (2025-11-04)
+
+
+### Features
+
+* **proxmox:** implement API Token authentication support
+* **proxmox:** add ability to specify port and thus compatability with setups behind a reverse proxy
+* **permissions:** implement automatic permission checking for API tokens
+* **permissions:** support per-node permission checking - only monitor nodes with Sys.Audit permission
+* **permissions:** graceful handling of partial permissions - monitor accessible nodes and exclude others
+
+
+### Minor Improvements
+
+* **proxmox:** new environment variable for SSL verification
+* **environment variables:** remove defaults. Add hints in logging for missing environment variables. Exit when mandatory environment variables are missing
+* **documentation:** provide documented ´example.env´
+* **logging:** better connection error messages and diagnostics
+* **logging:** set default log level to INFO (from DEBUG)
+* **docker:**  removed version: '3' from compose files
+* **logging:** add detailed permission checking logs showing which nodes are monitored/excluded
+* **logging:** improve error messages for permission issues with helpful troubleshooting steps
+* **permissions:** use API to verify token permissions
+* **error handling:** add clean exit handling for permission and connection errors
+
 ## [1.1.1](https://github.com/qtsone/proxmox-ntfy/compare/v1.1.0...v1.1.1) (2024-07-09)
 
 

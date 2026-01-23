@@ -1,5 +1,3 @@
-version: '3'
-
 services:
   proxmox-ntfy:
     image: ibacalu/proxmox-ntfy:latest
@@ -8,6 +6,11 @@ services:
       NTFY_USER: ${NTFY_USER}
       NTFY_PASS: ${NTFY_PASS}
       PROXMOX_API_URL: ${PROXMOX_API_URL}
+      PROXMOX_PORT: ${PROXMOX_PORT:-8006}
+      PROXMOX_USER: ${PROXMOX_USER}
       PROXMOX_PASS: ${PROXMOX_PASS}
+      PROXMOX_TOKEN_NAME: ${PROXMOX_TOKEN_NAME}
+      PROXMOX_TOKEN_VALUE: ${PROXMOX_TOKEN_VALUE}
+      VERIFY_SSL: ${VERIFY_SSL:-False}
       LOG_LEVEL: INFO
     restart: always
