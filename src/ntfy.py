@@ -23,9 +23,9 @@ TASK_STATUS_CHECK_INTERVAL = 3  # seconds
 TASK_FETCH_INTERVAL = 10  # seconds
 
 
-task_handlers = {}
-queue = asyncio.Queue()
-processed_tasks = set()
+task_handlers: Dict[str, asyncio.Task] = {}
+queue: asyncio.Queue[Dict[str, Any]] = asyncio.Queue()
+processed_tasks: Set[str] = set()
 
 
 def is_permission_error(exception: ResourceException) -> bool:
