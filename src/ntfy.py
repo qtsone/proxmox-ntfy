@@ -26,6 +26,44 @@ queue = asyncio.Queue()
 processed_tasks = set()
 
 
+def is_permission_error(exception: ResourceException) -> bool:
+    """Check if a ResourceException is a permission error (403).
+    
+    Args:
+        exception: ResourceException to check
+        
+    Returns:
+        True if the exception represents a 403 Forbidden error
+    """
+    if hasattr(exception, 'status_code'):
+        return exception.status_code == 403
+    error_msg = str(exception)
+    return "403" in error_msg or "Forbidden" in error_msg
+
+
+def parse_task_id(task_id: str) -> Tuple[str, str]:
+    """Parse a Proxmox task UPID into node and UUID.
+    
+    Format: UPID:node:uuid:timestamp:pid:user:starttime:type:status:upid
+    
+    Args:
+        task_id: Task UPID string
+        
+    Returns:
+        Tuple of (node, uuid)
+        
+    Raises:
+        ValueError: If task_id format is invalid
+    """
+    try:
+        parts = task_id.split(":", maxsplit=3)
+        if len(parts) < 3:
+            raise ValueError(f"Invalid task ID format: expected at least 3 parts, got {len(parts)}")
+        return parts[1], parts[2]  # node, uuid
+    except (IndexError, AttributeError) as e:
+        raise ValueError(f"Invalid task ID format: {task_id}") from e
+
+
 async def send_notification(title: str, tags: str, message: str) -> None:
     """Send a notification to the Ntfy server.
     
@@ -88,16 +126,8 @@ async def check_permissions(proxmox: proxmoxer.ProxmoxAPI, nodes: List[Dict[str,
         proxmox.nodes(first_node).tasks.get(since=0, source="all")
         logging.info(f"Permission check passed: API token can access tasks on node {first_node}")
     except ResourceException as e:
-        error_msg = str(e)
-        # Check status code if available, otherwise fall back to string matching
-        is_permission_error = False
-        if hasattr(e, 'status_code'):
-            is_permission_error = e.status_code == 403
-        else:
-            # Fallback for older proxmoxer versions
-            is_permission_error = "403" in error_msg or "Forbidden" in error_msg
-        
-        if is_permission_error:
+        if is_permission_error(e):
+            error_msg = str(e)
             logging.error(
                 f"Permission check failed: Cannot access tasks on node {first_node}: {error_msg}. "
                 f"API token lacks required {SYS_AUDIT_PERMISSION} permission. "
@@ -128,16 +158,8 @@ async def get_proxmox_tasks(proxmox: proxmoxer.ProxmoxAPI, since: int, allowed_n
             node_tasks = proxmox.nodes(node_name).tasks.get(since=since, source="all")
             tasks.extend(node_tasks)
         except ResourceException as e:
-            error_msg = str(e)
-            # Check status code if available, otherwise fall back to string matching
-            is_permission_error = False
-            if hasattr(e, 'status_code'):
-                is_permission_error = e.status_code == 403
-            else:
-                # Fallback for older proxmoxer versions
-                is_permission_error = "403" in error_msg or "Forbidden" in error_msg
-            
-            if is_permission_error:
+            if is_permission_error(e):
+                error_msg = str(e)
                 logging.warning(f"Lost permission to access tasks on node {node_name}: {error_msg}")
             else:
                 # Re-raise other ResourceExceptions
@@ -188,7 +210,7 @@ async def monitor_task(proxmox: proxmoxer.ProxmoxAPI, task: Dict[str, Any]) -> s
         Task UPID that was monitored
     """
     task_id = task['upid']
-    _, node, uuid, _ = task_id.split(":", maxsplit=3)
+    node, uuid = parse_task_id(task_id)
     logging.info(f"[{uuid}] Task found. Monitoring...")
     start_time = time.time()
     timeout = int(os.getenv('TASK_TIMEOUT', DEFAULT_TASK_TIMEOUT))
@@ -254,7 +276,7 @@ async def fetch_tasks(proxmox: proxmoxer.ProxmoxAPI, allowed_nodes: Optional[Lis
 
             for task in tasks:
                 task_id = task['upid']
-                _, _, uuid, _ = task_id.split(":", maxsplit=3)
+                _, uuid = parse_task_id(task_id)
                 if uuid not in processed_tasks:
                     await queue.put(task)
                     processed_tasks.add(uuid)
