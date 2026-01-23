@@ -8,6 +8,7 @@ import sys
 import urllib3
 import time
 import json
+from typing import Optional, List, Dict, Tuple, Set, Any
 
 # Disable SSL warnings
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
@@ -71,7 +72,14 @@ queue = asyncio.Queue()
 processed_tasks = set()
 
 
-async def send_notification(title, tags, message):
+async def send_notification(title: str, tags: str, message: str) -> None:
+    """Send a notification to the Ntfy server.
+    
+    Args:
+        title: Notification title
+        tags: Comma-separated tags for the notification
+        message: Notification message body (Markdown supported)
+    """
     logging.info(f"Sending notification: Title={title}, Tags={tags}")
     async with aiohttp.ClientSession() as session:
         headers = {
@@ -100,7 +108,17 @@ async def send_notification(title, tags, message):
         except Exception as e:
             logging.error(f"Error sending notification: {e}")
 
-def check_node_permission(permissions, node_name, has_dc_permission=False):
+def check_node_permission(permissions: Dict[str, Any], node_name: str, has_dc_permission: bool = False) -> bool:
+    """Check if a node has Sys.Audit permission.
+    
+    Args:
+        permissions: Dictionary of permissions from Proxmox API
+        node_name: Name of the node to check
+        has_dc_permission: Whether datacenter-level permission exists
+        
+    Returns:
+        True if node has permission, False otherwise
+    """
     if has_dc_permission:
         return True
     
@@ -112,7 +130,21 @@ def check_node_permission(permissions, node_name, has_dc_permission=False):
     
     return False
 
-def has_permission_in_value(perms, perm_name):
+def has_permission_in_value(perms: Any, perm_name: str) -> bool:
+    """Check if a permission name exists in a permission value.
+    
+    Handles different permission value formats from Proxmox API:
+    - List: ['Sys.Audit', 'VM.Audit']
+    - Dict: {'Sys.Audit': True}
+    - String: 'Sys.Audit'
+    
+    Args:
+        perms: Permission value (list, dict, or string)
+        perm_name: Permission name to check for
+        
+    Returns:
+        True if permission exists, False otherwise
+    """
     if isinstance(perms, list):
         return perm_name in perms
     elif isinstance(perms, dict):
@@ -122,7 +154,82 @@ def has_permission_in_value(perms, perm_name):
         return perm_name in perms
     return False
 
-async def check_permissions(proxmox, nodes):
+
+def _check_datacenter_permission(permissions: Dict[str, Any]) -> bool:
+    """Check if Sys.Audit permission exists at datacenter level.
+    
+    Args:
+        permissions: Dictionary of permissions from Proxmox API
+        
+    Returns:
+        True if datacenter-level permission exists, False otherwise
+    """
+    if '/' in permissions:
+        dc_perms = permissions['/']
+        if has_permission_in_value(dc_perms, 'Sys.Audit'):
+            logging.info("Found Sys.Audit permission at datacenter level (applies to all nodes)")
+            return True
+    return False
+
+
+def _check_node_permissions(permissions: Dict[str, Any], nodes: List[Dict[str, Any]], 
+                           has_dc_permission: bool) -> Tuple[List[str], List[str]]:
+    """Check which nodes have Sys.Audit permission.
+    
+    Args:
+        permissions: Dictionary of permissions from Proxmox API
+        nodes: List of node dictionaries from proxmox.nodes.get()
+        has_dc_permission: Whether datacenter-level permission exists
+        
+    Returns:
+        Tuple of (allowed_nodes, excluded_nodes) lists
+    """
+    allowed_nodes = []
+    excluded_nodes = []
+    
+    for node in nodes:
+        node_name = node['node']
+        if check_node_permission(permissions, node_name, has_dc_permission):
+            allowed_nodes.append(node_name)
+        else:
+            excluded_nodes.append(node_name)
+    
+    return allowed_nodes, excluded_nodes
+
+
+def _handle_permission_error(error_msg: str, nodes: List[Dict[str, Any]]) -> Tuple[List[str], str]:
+    """Handle permission check errors and log appropriate messages.
+    
+    Args:
+        error_msg: Error message from exception
+        nodes: List of nodes that were checked
+        
+    Returns:
+        Tuple of (empty list, error_message)
+    """
+    logging.error(f"Permission check failed: {error_msg}")
+    logging.error(f"Checked {len(nodes)} node(s): {', '.join([n['node'] for n in nodes])}")
+    logging.error("")
+    _log_error_message('insufficient_permissions')
+    return [], error_msg
+
+
+async def check_permissions(proxmox: proxmoxer.ProxmoxAPI, nodes: List[Dict[str, Any]]) -> Tuple[List[str], Optional[str]]:
+    """Check which nodes the current user/token has Sys.Audit permission for.
+    
+    Args:
+        proxmox: Authenticated ProxmoxAPI instance
+        nodes: List of node dictionaries from proxmox.nodes.get()
+        
+    Returns:
+        Tuple of (allowed_node_names, error_message):
+        - allowed_node_names: List of node names with Sys.Audit permission
+        - error_message: String error if no nodes available, else None
+        
+    Raises:
+        ResourceException: For non-403 API errors
+        Exception: For unexpected errors
+    """
     if not nodes:
         return [], "No nodes found to check permissions"
     
@@ -131,25 +238,11 @@ async def check_permissions(proxmox, nodes):
         permissions = proxmox.access.permissions.get()
         logging.debug(f"Retrieved permissions: {permissions}")
         
-        # Check if we have Sys.Audit permission at datacenter level (/)
-        # This applies to all nodes
-        has_dc_permission = False
-        if '/' in permissions:
-            dc_perms = permissions['/']
-            if has_permission_in_value(dc_perms, 'Sys.Audit'):
-                has_dc_permission = True
-                logging.info("Found Sys.Audit permission at datacenter level (applies to all nodes)")
+        # Check datacenter-level permission
+        has_dc_permission = _check_datacenter_permission(permissions)
         
-        # Check each node individually
-        allowed_nodes = []
-        excluded_nodes = []
-        
-        for node in nodes:
-            node_name = node['node']
-            if check_node_permission(permissions, node_name, has_dc_permission):
-                allowed_nodes.append(node_name)
-            else:
-                excluded_nodes.append(node_name)
+        # Check node-level permissions
+        allowed_nodes, excluded_nodes = _check_node_permissions(permissions, nodes, has_dc_permission)
         
         # Report results
         if allowed_nodes:
@@ -161,11 +254,7 @@ async def check_permissions(proxmox, nodes):
         else:
             # No nodes have permission
             error_msg = "Sys.Audit permission not found for any node"
-            logging.error(f"Permission check failed: {error_msg}")
-            logging.error(f"Checked {len(nodes)} node(s): {', '.join([n['node'] for n in nodes])}")
-            logging.error("")
-            _log_error_message('insufficient_permissions')
-            return [], error_msg
+            return _handle_permission_error(error_msg, nodes)
             
     except ResourceException as e:
         error_msg = str(e)
@@ -190,7 +279,20 @@ async def check_permissions(proxmox, nodes):
         logging.error(f"Unexpected error checking permissions: {e}")
         raise
 
-async def get_proxmox_tasks(proxmox, since, allowed_nodes=None):
+async def get_proxmox_tasks(proxmox: proxmoxer.ProxmoxAPI, since: int, allowed_nodes: Optional[List[str]] = None) -> List[Dict[str, Any]]:
+    """Fetch Proxmox tasks from specified nodes.
+    
+    Args:
+        proxmox: Authenticated ProxmoxAPI instance
+        since: Unix timestamp to fetch tasks since
+        allowed_nodes: Optional list of node names to fetch from. If None, fetches from all nodes.
+        
+    Returns:
+        List of task dictionaries from Proxmox API
+        
+    Raises:
+        ResourceException: For API errors (except 403 permission errors which are logged)
+    """
     if allowed_nodes is None:
         # If no filter specified, get all nodes
         nodes = proxmox.nodes.get()
@@ -221,17 +323,46 @@ async def get_proxmox_tasks(proxmox, since, allowed_nodes=None):
             # Continue with other nodes
     return tasks
 
-async def get_task_status(proxmox, node, task_id):
+async def get_task_status(proxmox: proxmoxer.ProxmoxAPI, node: str, task_id: str) -> Dict[str, Any]:
+    """Get the status of a Proxmox task.
+    
+    Args:
+        proxmox: Authenticated ProxmoxAPI instance
+        node: Node name where the task is running
+        task_id: Task UPID
+        
+    Returns:
+        Dictionary containing task status information
+    """
     status = proxmox.nodes(node).tasks(task_id).status.get()
     logging.debug(f"STATUS [{task_id}] {status}")
     return status
 
-async def get_task_log(proxmox, node, task_id):
+async def get_task_log(proxmox: proxmoxer.ProxmoxAPI, node: str, task_id: str) -> List[str]:
+    """Get the log entries for a Proxmox task.
+    
+    Args:
+        proxmox: Authenticated ProxmoxAPI instance
+        node: Node name where the task is running
+        task_id: Task UPID
+        
+    Returns:
+        List of log entry text strings
+    """
     log = proxmox.nodes(node).tasks(task_id).log.get()
     logging.debug(f"LOG [{task_id}] {log}")
     return [log_entry['t'] for log_entry in log if log_entry['t']]
 
-async def monitor_task(proxmox, task):
+async def monitor_task(proxmox: proxmoxer.ProxmoxAPI, task: Dict[str, Any]) -> str:
+    """Monitor a Proxmox task until completion and send notification.
+    
+    Args:
+        proxmox: Authenticated ProxmoxAPI instance
+        task: Task dictionary from Proxmox API
+        
+    Returns:
+        Task UPID that was monitored
+    """
     task_id = task['upid']
     _, node, uuid, _ = task_id.split(":", maxsplit=3)
     logging.info(f"[{uuid}] Task found. Monitoring...")
@@ -279,7 +410,13 @@ async def monitor_task(proxmox, task):
     logging.info(f"Task {task_id} processed.")
     return task_id
 
-async def fetch_tasks(proxmox, allowed_nodes=None):
+async def fetch_tasks(proxmox: proxmoxer.ProxmoxAPI, allowed_nodes: Optional[List[str]] = None) -> None:
+    """Continuously fetch new Proxmox tasks and add them to the queue.
+    
+    Args:
+        proxmox: Authenticated ProxmoxAPI instance
+        allowed_nodes: Optional list of node names to monitor. If None, monitors all nodes.
+    """
     logging.info(f'Fetching tasks from {len(allowed_nodes) if allowed_nodes else "all"} node(s)...')
     current_time = int(time.time())
 
@@ -301,8 +438,14 @@ async def fetch_tasks(proxmox, allowed_nodes=None):
 
         await asyncio.sleep(10)
 
-async def process_tasks(proxmox):
-    """Continually process tasks from the queue."""
+async def process_tasks(proxmox: proxmoxer.ProxmoxAPI) -> None:
+    """Continually process tasks from the queue.
+    
+    Creates monitoring tasks for each queued task and tracks them.
+    
+    Args:
+        proxmox: Authenticated ProxmoxAPI instance
+    """
     while True:
         task = await queue.get()
         task_id = task['upid']
@@ -314,9 +457,29 @@ async def process_tasks(proxmox):
             task_handlers[task_id] = task_handler
             logging.info(f"Started handler for task {task_id}")
 
-async def monitor(proxmox_host=None, proxmox_port=None, proxmox_user=None, 
-                  proxmox_pass=None, proxmox_token_name=None, proxmox_token_value=None,
-                  verify_ssl=False):
+async def monitor(proxmox_host: Optional[str] = None, proxmox_port: Optional[int] = None, 
+                  proxmox_user: Optional[str] = None, proxmox_pass: Optional[str] = None, 
+                  proxmox_token_name: Optional[str] = None, proxmox_token_value: Optional[str] = None,
+                  verify_ssl: bool = False) -> None:
+    """Main monitoring function that sets up Proxmox connection and starts monitoring tasks.
+    
+    Creates authenticated Proxmox API client, validates connection, checks permissions,
+    and starts background tasks for fetching and processing Proxmox tasks.
+    
+    Args:
+        proxmox_host: Proxmox server hostname or IP
+        proxmox_port: Proxmox API port
+        proxmox_user: Proxmox username
+        proxmox_pass: Proxmox password (for password authentication)
+        proxmox_token_name: API token name (for token authentication)
+        proxmox_token_value: API token value (for token authentication)
+        verify_ssl: Whether to verify SSL certificates
+        
+    Raises:
+        PermissionError: If API token lacks required permissions
+        ConnectionError: If unable to connect to Proxmox API
+        ValueError: If API returns invalid response format
+    """
 
     logging.info(f"Monitoring {proxmox_host}:{proxmox_port}...")
     
@@ -324,47 +487,17 @@ async def monitor(proxmox_host=None, proxmox_port=None, proxmox_user=None,
     use_token = bool(proxmox_token_name and proxmox_token_value)
     logging.info(f"Using token authentication: {use_token}")
 
-    proxmox = None
-
     try:
-        if use_token:
-            # API token authentication
-            # According to proxmoxer docs: https://proxmoxer.github.io/docs/latest/authentication/
-            logging.info(f"Using Proxmox API token authentication: user={proxmox_user}, token_name={proxmox_token_name}")
-            proxmox = proxmoxer.ProxmoxAPI(proxmox_host,
-                                            port=proxmox_port,
-                                            user=proxmox_user,
-                                            token_name=proxmox_token_name,
-                                            token_value=proxmox_token_value,
-                                            verify_ssl=verify_ssl)
-        else:
-            # Standard username/password authentication
-            logging.info(f"Using Proxmox password authentication: {proxmox_user}")
-            proxmox = proxmoxer.ProxmoxAPI(proxmox_host,
-                                            port=proxmox_port,
-                                            user=proxmox_user,
-                                            password=proxmox_pass,
-                                            verify_ssl=verify_ssl)
+        # Create authenticated Proxmox client
+        proxmox = create_proxmox_client(proxmox_host, proxmox_port, proxmox_user,
+                                       proxmox_pass, proxmox_token_name, proxmox_token_value,
+                                       verify_ssl)
         
-        # Test connection by trying to get nodes and validate response
-        nodes = proxmox.nodes.get()
-        if not isinstance(nodes, list):
-            raise ValueError(f"Invalid response from Proxmox API: expected list of nodes, got {type(nodes)}")
-        logging.info(f"Successfully connected to Proxmox API at {proxmox_host}:{proxmox_port} (found {len(nodes)} node(s))")
+        # Validate connection and get nodes
+        nodes = validate_connection(proxmox, proxmox_host, proxmox_port)
         
-        # Check permissions for accessing tasks
-        allowed_nodes = None  # None means all nodes (for password auth or full permissions)
-        
-        if use_token:
-            logging.info("Checking API token permissions...")
-            allowed_nodes, perm_error = await check_permissions(proxmox, nodes)
-            if not allowed_nodes:
-                raise PermissionError(f"API token lacks required permissions to access tasks: {perm_error}")
-            logging.info(f"API token permissions verified: will monitor {len(allowed_nodes)} node(s)")
-        else:
-            # For password auth, we assume full permissions (user's own permissions)
-            logging.debug("Password authentication: skipping explicit permission check, monitoring all nodes")
-            allowed_nodes = None  # Monitor all nodes
+        # Determine which nodes can be monitored
+        allowed_nodes = await get_allowed_nodes(proxmox, nodes, use_token)
         
     except PermissionError:
         # Re-raise permission errors as-is (they already have helpful messages)
@@ -388,6 +521,7 @@ async def monitor(proxmox_host=None, proxmox_port=None, proxmox_user=None,
         
         raise ConnectionError(f"Unable to connect to Proxmox API at {proxmox_host}:{proxmox_port}: {error_msg}")
 
+    # Start background monitoring tasks
     fetch_task = asyncio.create_task(fetch_tasks(proxmox, allowed_nodes))
     process_task = asyncio.create_task(process_tasks(proxmox))
 
