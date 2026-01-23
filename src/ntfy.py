@@ -450,23 +450,17 @@ async def monitor(proxmox_host: Optional[str] = None, proxmox_port: Optional[int
         logging.error(f"Proxmox API error: {error_msg}")
         logging.error("Please verify your credentials and token permissions")
         raise ConnectionError(f"Unable to connect to Proxmox API at {proxmox_host}:{proxmox_port}: {error_msg}")
+    except (aiohttp.ClientError, asyncio.TimeoutError, OSError) as e:
+        # Network/connection errors
+        logging.error(f"Connection failed to {proxmox_host}:{proxmox_port}: {e}")
+        logging.error("Check firewall rules, service status, and network access")
+        raise ConnectionError(f"Unable to connect to Proxmox API at {proxmox_host}:{proxmox_port}: {e}")
     except Exception as e:
-        # Handle connection and other errors
+        # Other errors (likely authentication/API)
         error_msg = str(e)
-        # Check if it's a connection-related error
-        is_connection_error = any(err in error_msg.lower() for err in [
-            'connection refused', 'connection error', 'timeout', 
-            'name resolution', 'failed to resolve'
-        ])
-        
         logging.error(f"Failed to connect to Proxmox API: {error_msg}")
-        
-        if is_connection_error:
-            logging.error(f"Connection failed to {proxmox_host}:{proxmox_port}. Check firewall rules, service status, and network access")
-        else:
-            logging.error(f"This appears to be an authentication or API error, not a network issue")
-            logging.error(f"Please verify your credentials and token permissions")
-        
+        logging.error("This appears to be an authentication or API error")
+        logging.error("Please verify your credentials and token permissions")
         raise ConnectionError(f"Unable to connect to Proxmox API at {proxmox_host}:{proxmox_port}: {error_msg}")
 
     # Start background monitoring tasks
