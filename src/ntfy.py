@@ -377,11 +377,10 @@ def validate_connection(proxmox: proxmoxer.ProxmoxAPI, proxmox_host: str, proxmo
     return nodes
 
 
-async def get_allowed_nodes(proxmox: proxmoxer.ProxmoxAPI, nodes: List[Dict[str, Any]], 
-                           use_token: bool) -> Optional[List[str]]:
-    """Verify permissions and determine which nodes can be monitored.
+async def verify_permissions(proxmox: proxmoxer.ProxmoxAPI, nodes: List[Dict[str, Any]], 
+                            use_token: bool) -> None:
+    """Verify that the authenticated user/token has permission to access tasks.
     
-    Verifies that the authenticated user/token has permission to access tasks.
     Node-level permission filtering is handled automatically by get_proxmox_tasks()
     which will skip nodes without permission.
     
@@ -390,18 +389,13 @@ async def get_allowed_nodes(proxmox: proxmoxer.ProxmoxAPI, nodes: List[Dict[str,
         nodes: List of node dictionaries from proxmox.nodes.get()
         use_token: Whether token authentication is being used
         
-    Returns:
-        None to monitor all nodes (node-level filtering happens during task fetching)
-        
     Raises:
         PermissionError: If user/token lacks required permissions
     """
     auth_method = "API token" if use_token else "password"
     logging.info(f"Checking {auth_method} authentication permissions...")
     await check_permissions(proxmox, nodes)
-    logging.info(f"{auth_method.capitalize()} authentication permissions verified: will monitor all accessible nodes")
-    # Return None to monitor all nodes - get_proxmox_tasks() will handle node-level filtering
-    return None
+    logging.info(f"{auth_method.capitalize()} authentication permissions verified")
 
 
 async def monitor(proxmox_host: Optional[str] = None, proxmox_port: Optional[int] = None, 
@@ -443,8 +437,9 @@ async def monitor(proxmox_host: Optional[str] = None, proxmox_port: Optional[int
         # Validate connection and get nodes
         nodes = validate_connection(proxmox, proxmox_host, proxmox_port)
         
-        # Determine which nodes can be monitored
-        allowed_nodes = await get_allowed_nodes(proxmox, nodes, use_token)
+        # Verify permissions (node-level filtering happens in get_proxmox_tasks())
+        await verify_permissions(proxmox, nodes, use_token)
+        allowed_nodes = None  # Monitor all nodes, filtering happens in get_proxmox_tasks()
         
     except PermissionError:
         # Re-raise permission errors as-is (they already have helpful messages)
