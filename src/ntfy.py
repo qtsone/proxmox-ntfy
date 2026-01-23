@@ -457,6 +457,92 @@ async def process_tasks(proxmox: proxmoxer.ProxmoxAPI) -> None:
             task_handlers[task_id] = task_handler
             logging.info(f"Started handler for task {task_id}")
 
+
+def create_proxmox_client(proxmox_host: str, proxmox_port: int, proxmox_user: str,
+                         proxmox_pass: Optional[str] = None, proxmox_token_name: Optional[str] = None,
+                         proxmox_token_value: Optional[str] = None, verify_ssl: bool = False) -> proxmoxer.ProxmoxAPI:
+    """Create and return authenticated Proxmox API client.
+    
+    Args:
+        proxmox_host: Proxmox server hostname or IP
+        proxmox_port: Proxmox API port
+        proxmox_user: Proxmox username
+        proxmox_pass: Proxmox password (for password authentication)
+        proxmox_token_name: API token name (for token authentication)
+        proxmox_token_value: API token value (for token authentication)
+        verify_ssl: Whether to verify SSL certificates
+        
+    Returns:
+        Authenticated ProxmoxAPI instance
+    """
+    use_token = bool(proxmox_token_name and proxmox_token_value)
+    
+    if use_token:
+        logging.info(f"Using Proxmox API token authentication: user={proxmox_user}, token_name={proxmox_token_name}")
+        return proxmoxer.ProxmoxAPI(proxmox_host,
+                                    port=proxmox_port,
+                                    user=proxmox_user,
+                                    token_name=proxmox_token_name,
+                                    token_value=proxmox_token_value,
+                                    verify_ssl=verify_ssl)
+    else:
+        logging.info(f"Using Proxmox password authentication: {proxmox_user}")
+        return proxmoxer.ProxmoxAPI(proxmox_host,
+                                    port=proxmox_port,
+                                    user=proxmox_user,
+                                    password=proxmox_pass,
+                                    verify_ssl=verify_ssl)
+
+
+def validate_connection(proxmox: proxmoxer.ProxmoxAPI, proxmox_host: str, proxmox_port: int) -> List[Dict[str, Any]]:
+    """Test connection and return list of nodes.
+    
+    Args:
+        proxmox: Authenticated ProxmoxAPI instance
+        proxmox_host: Proxmox server hostname (for logging)
+        proxmox_port: Proxmox API port (for logging)
+        
+    Returns:
+        List of node dictionaries from Proxmox API
+        
+    Raises:
+        ValueError: If API returns invalid response format
+    """
+    nodes = proxmox.nodes.get()
+    if not isinstance(nodes, list):
+        raise ValueError(f"Invalid response from Proxmox API: expected list of nodes, got {type(nodes)}")
+    logging.info(f"Successfully connected to Proxmox API at {proxmox_host}:{proxmox_port} (found {len(nodes)} node(s))")
+    return nodes
+
+
+async def get_allowed_nodes(proxmox: proxmoxer.ProxmoxAPI, nodes: List[Dict[str, Any]], 
+                           use_token: bool) -> Optional[List[str]]:
+    """Determine which nodes can be monitored based on permissions.
+    
+    Args:
+        proxmox: Authenticated ProxmoxAPI instance
+        nodes: List of node dictionaries from proxmox.nodes.get()
+        use_token: Whether token authentication is being used
+        
+    Returns:
+        List of allowed node names, or None to monitor all nodes
+        
+    Raises:
+        PermissionError: If API token lacks required permissions
+    """
+    if use_token:
+        logging.info("Checking API token permissions...")
+        allowed_nodes, perm_error = await check_permissions(proxmox, nodes)
+        if not allowed_nodes:
+            raise PermissionError(f"API token lacks required permissions to access tasks: {perm_error}")
+        logging.info(f"API token permissions verified: will monitor {len(allowed_nodes)} node(s)")
+        return allowed_nodes
+    else:
+        # For password auth, we assume full permissions (user's own permissions)
+        logging.debug("Password authentication: skipping explicit permission check, monitoring all nodes")
+        return None  # Monitor all nodes
+
+
 async def monitor(proxmox_host: Optional[str] = None, proxmox_port: Optional[int] = None, 
                   proxmox_user: Optional[str] = None, proxmox_pass: Optional[str] = None, 
                   proxmox_token_name: Optional[str] = None, proxmox_token_value: Optional[str] = None,
