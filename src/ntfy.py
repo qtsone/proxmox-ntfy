@@ -19,6 +19,10 @@ NTFY_TOKEN = os.getenv('NTFY_TOKEN', None)
 NTFY_USER = os.getenv('NTFY_USER', None)
 NTFY_PASS = os.getenv('NTFY_PASS', None)
 
+# Constants
+SYS_AUDIT_PERMISSION = "Sys.Audit"
+DEFAULT_TASK_TIMEOUT = 1800
+
 # Error messages
 ERROR_MESSAGES = {
     'insufficient_permissions': """Required permissions for this application:
@@ -126,7 +130,7 @@ def check_node_permission(permissions: Dict[str, Any], node_name: str, has_dc_pe
     node_path = f"/nodes/{node_name}"
     if node_path in permissions:
         perms = permissions[node_path]
-        return has_permission_in_value(perms, 'Sys.Audit')
+        return has_permission_in_value(perms, SYS_AUDIT_PERMISSION)
     
     return False
 
@@ -135,7 +139,7 @@ def has_permission_in_value(perms: Any, perm_name: str) -> bool:
     
     Handles different permission value formats from Proxmox API:
     - List: ['Sys.Audit', 'VM.Audit']
-    - Dict: {'Sys.Audit': True}
+    - Dict: {'Sys.Audit': True} or {'Sys.Audit': 1}
     - String: 'Sys.Audit'
     
     Args:
@@ -148,8 +152,8 @@ def has_permission_in_value(perms: Any, perm_name: str) -> bool:
     if isinstance(perms, list):
         return perm_name in perms
     elif isinstance(perms, dict):
-        # Could be {'Sys.Audit': True} or similar
-        return perm_name in perms or any(perm_name in str(p) for p in perms.keys())
+        # Check if permission name exists as a key in the dict
+        return perm_name in perms
     elif isinstance(perms, str):
         return perm_name in perms
     return False
@@ -166,8 +170,8 @@ def _check_datacenter_permission(permissions: Dict[str, Any]) -> bool:
     """
     if '/' in permissions:
         dc_perms = permissions['/']
-        if has_permission_in_value(dc_perms, 'Sys.Audit'):
-            logging.info("Found Sys.Audit permission at datacenter level (applies to all nodes)")
+        if has_permission_in_value(dc_perms, SYS_AUDIT_PERMISSION):
+            logging.info(f"Found {SYS_AUDIT_PERMISSION} permission at datacenter level (applies to all nodes)")
             return True
     return False
 
@@ -246,14 +250,14 @@ async def check_permissions(proxmox: proxmoxer.ProxmoxAPI, nodes: List[Dict[str,
         
         # Report results
         if allowed_nodes:
-            logging.info(f"Nodes with Sys.Audit permission: {', '.join(allowed_nodes)}")
+            logging.info(f"Nodes with {SYS_AUDIT_PERMISSION} permission: {', '.join(allowed_nodes)}")
             if excluded_nodes:
-                logging.warning(f"Nodes excluded from monitoring (no Sys.Audit permission): {', '.join(excluded_nodes)}")
-                logging.warning("To monitor these nodes, assign 'Sys.Audit' role at /nodes/{node_name}")
+                logging.warning(f"Nodes excluded from monitoring (no {SYS_AUDIT_PERMISSION} permission): {', '.join(excluded_nodes)}")
+                logging.warning(f"To monitor these nodes, assign '{SYS_AUDIT_PERMISSION}' role at /nodes/{{node_name}}")
             return allowed_nodes, None
         else:
             # No nodes have permission
-            error_msg = "Sys.Audit permission not found for any node"
+            error_msg = f"{SYS_AUDIT_PERMISSION} permission not found for any node"
             return _handle_permission_error(error_msg, nodes)
             
     except ResourceException as e:
@@ -279,13 +283,13 @@ async def check_permissions(proxmox: proxmoxer.ProxmoxAPI, nodes: List[Dict[str,
         logging.error(f"Unexpected error checking permissions: {e}")
         raise
 
-async def get_proxmox_tasks(proxmox: proxmoxer.ProxmoxAPI, since: int, allowed_nodes: Optional[List[str]] = None) -> List[Dict[str, Any]]:
+async def get_proxmox_tasks(proxmox: proxmoxer.ProxmoxAPI, since: int, allowed_nodes: List[str]) -> List[Dict[str, Any]]:
     """Fetch Proxmox tasks from specified nodes.
     
     Args:
         proxmox: Authenticated ProxmoxAPI instance
         since: Unix timestamp to fetch tasks since
-        allowed_nodes: Optional list of node names to fetch from. If None, fetches from all nodes.
+        allowed_nodes: List of node names to fetch from (required)
         
     Returns:
         List of task dictionaries from Proxmox API
@@ -293,11 +297,6 @@ async def get_proxmox_tasks(proxmox: proxmoxer.ProxmoxAPI, since: int, allowed_n
     Raises:
         ResourceException: For API errors (except 403 permission errors which are logged)
     """
-    if allowed_nodes is None:
-        # If no filter specified, get all nodes
-        nodes = proxmox.nodes.get()
-        allowed_nodes = [node['node'] for node in nodes]
-    
     tasks = []
     for node_name in allowed_nodes:
         try:
@@ -367,7 +366,7 @@ async def monitor_task(proxmox: proxmoxer.ProxmoxAPI, task: Dict[str, Any]) -> s
     _, node, uuid, _ = task_id.split(":", maxsplit=3)
     logging.info(f"[{uuid}] Task found. Monitoring...")
     start_time = time.time()
-    timeout = 1800
+    timeout = int(os.getenv('TASK_TIMEOUT', DEFAULT_TASK_TIMEOUT))
     while True:
         task_status = await get_task_status(proxmox, node, task_id)
         status = task_status.get('status', None)
@@ -392,32 +391,36 @@ async def monitor_task(proxmox: proxmoxer.ProxmoxAPI, task: Dict[str, Any]) -> s
 
     log_entries = await get_task_log(proxmox, node, task_id)
     title = uuid
-    message = f"## Task Details\n\n"
-    message += f"**Status**: {exitstatus}\n"
-    message += f"**User**: {task['user']}\n\n"
-
-    message += "### Task Status\n"
-    message += "```json\n"
-    message += json.dumps(task_status, indent=2)
-    message += "\n```\n\n"
-
-    message += "### Task Log\n"
-    message += "```json\n"
-    message += json.dumps(log_entries, indent=2)
-    message += "\n```\n"
+    message = (
+        f"## Task Details\n\n"
+        f"**Status**: {exitstatus}\n"
+        f"**User**: {task['user']}\n\n"
+        f"### Task Status\n"
+        f"```json\n"
+        f"{json.dumps(task_status, indent=2)}\n"
+        f"```\n\n"
+        f"### Task Log\n"
+        f"```json\n"
+        f"{json.dumps(log_entries, indent=2)}\n"
+        f"```\n"
+    )
 
     await send_notification(title, tags, message)
     logging.info(f"Task {task_id} processed.")
     return task_id
 
-async def fetch_tasks(proxmox: proxmoxer.ProxmoxAPI, allowed_nodes: Optional[List[str]] = None) -> None:
+async def fetch_tasks(proxmox: proxmoxer.ProxmoxAPI, allowed_nodes: Optional[List[str]]) -> None:
     """Continuously fetch new Proxmox tasks and add them to the queue.
     
     Args:
         proxmox: Authenticated ProxmoxAPI instance
         allowed_nodes: Optional list of node names to monitor. If None, monitors all nodes.
     """
-    logging.info(f'Fetching tasks from {len(allowed_nodes) if allowed_nodes else "all"} node(s)...')
+    if allowed_nodes is None:
+        # Get all nodes if not specified
+        nodes = proxmox.nodes.get()
+        allowed_nodes = [node['node'] for node in nodes]
+    logging.info(f'Fetching tasks from {len(allowed_nodes)} node(s)...')
     current_time = int(time.time())
 
     while True:
