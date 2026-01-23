@@ -10,9 +10,6 @@ import time
 import json
 from typing import Optional, List, Dict, Tuple, Set, Any
 
-# Disable SSL warnings
-urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
-
 # Ntfy server details (validation moved to __main__ after logging setup)
 NTFY_SERVER_URL = os.getenv('NTFY_SERVER_URL', None)
 NTFY_TOKEN = os.getenv('NTFY_TOKEN', None)
@@ -57,7 +54,7 @@ async def send_notification(title: str, tags: str, message: str) -> None:
             async with session.post(NTFY_SERVER_URL, data=message, headers=headers, auth=auth) as response:
                 logging.debug(f"POST Response: Status={response.status}, Text={await response.text()}")
                 response.raise_for_status()  # Raise an exception for 4xx or 5xx status codes
-                logging.info(f"Notification sent successfully: Title={title}, Tags={tags}")
+                logging.info(f"Notification sent successfully (Status: {response.status})")
         except aiohttp.ClientResponseError as e:
             logging.error(f"Error sending notification: {e}")
             logging.debug(f"Response Headers: {e.headers}")
@@ -101,8 +98,11 @@ async def check_permissions(proxmox: proxmoxer.ProxmoxAPI, nodes: List[Dict[str,
             is_permission_error = "403" in error_msg or "Forbidden" in error_msg
         
         if is_permission_error:
-            logging.error(f"Permission check failed: Cannot access tasks on node {first_node}: {error_msg}")
-            logging.error(f"API token lacks required {SYS_AUDIT_PERMISSION} permission. Assign Sys.Audit role at Datacenter > Permissions > API Tokens")
+            logging.error(
+                f"Permission check failed: Cannot access tasks on node {first_node}: {error_msg}. "
+                f"API token lacks required {SYS_AUDIT_PERMISSION} permission. "
+                f"Assign Sys.Audit role at Datacenter > Permissions > API Tokens"
+            )
             raise PermissionError(f"API token lacks required {SYS_AUDIT_PERMISSION} permission to access tasks")
         else:
             # Other ResourceException - re-raise
@@ -398,7 +398,7 @@ async def monitor(proxmox_host: Optional[str] = None, proxmox_port: Optional[int
     
     # Determine authentication method
     use_token = bool(proxmox_token_name and proxmox_token_value)
-    logging.info(f"Using token authentication: {use_token}")
+    # Authentication method is already logged in create_proxmox_client()
 
     try:
         # Create authenticated Proxmox client
@@ -478,7 +478,16 @@ if __name__ == "__main__":
 
     verify_ssl = os.getenv('VERIFY_SSL', 'False')
     verify_ssl = verify_ssl.lower() in ('true', '1', 'yes', 'on')
-    logging.info(f"VERIFY_SSL: {verify_ssl}")
+    
+    # Only disable SSL warnings if verification is disabled (after logging is configured)
+    if not verify_ssl:
+        urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+        logging.warning(
+            "SECURITY WARNING: SSL verification is disabled. "
+            "This is insecure and not recommended for production."
+        )
+    else:
+        logging.info("SSL verification is enabled")
 
     proxmox_user = os.getenv('PROXMOX_USER', None)
     if not proxmox_user:
