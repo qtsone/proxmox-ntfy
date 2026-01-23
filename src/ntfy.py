@@ -19,6 +19,8 @@ NTFY_PASS = os.getenv('NTFY_PASS', None)
 # Constants
 SYS_AUDIT_PERMISSION = "Sys.Audit"
 DEFAULT_TASK_TIMEOUT = 1800
+TASK_STATUS_CHECK_INTERVAL = 3  # seconds
+TASK_FETCH_INTERVAL = 10  # seconds
 
 
 task_handlers = {}
@@ -259,7 +261,7 @@ async def monitor_task(proxmox: proxmoxer.ProxmoxAPI, task: Dict[str, Any]) -> s
                 break
             else:
                 logging.debug(f"RUNNING [{uuid}] Current status: {status}.")
-                await asyncio.sleep(3)
+                await asyncio.sleep(TASK_STATUS_CHECK_INTERVAL)
 
     log_entries = await get_task_log(proxmox, node, task_id)
     title = uuid
@@ -311,7 +313,7 @@ async def fetch_tasks(proxmox: proxmoxer.ProxmoxAPI, allowed_nodes: Optional[Lis
         except Exception as e:
             logging.error(f"Error fetching tasks: {e}")
 
-        await asyncio.sleep(10)
+        await asyncio.sleep(TASK_FETCH_INTERVAL)
 
 async def process_tasks(proxmox: proxmoxer.ProxmoxAPI) -> None:
     """Continually process tasks from the queue.
