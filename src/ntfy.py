@@ -12,27 +12,11 @@ import json
 # Disable SSL warnings
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-# Initialize logging early
-log_level = os.getenv('LOG_LEVEL', "INFO")
-logging.basicConfig(
-    format='%(asctime)s %(levelname)s %(message)s',
-    level=log_level,
-    stream=sys.stdout)
-
-# Ntfy server details
+# Ntfy server details (validation moved to __main__ after logging setup)
 NTFY_SERVER_URL = os.getenv('NTFY_SERVER_URL', None)
-if not NTFY_SERVER_URL:
-    logging.error("Mandatory environment variable NTFY_SERVER_URL is not set")
-    sys.exit(1)
 NTFY_TOKEN = os.getenv('NTFY_TOKEN', None)
-if not NTFY_TOKEN:
-    logging.debug("NTFY_TOKEN is not set")
 NTFY_USER = os.getenv('NTFY_USER', None)
-if not NTFY_USER:
-    logging.debug("NTFY_USER is not set")
 NTFY_PASS = os.getenv('NTFY_PASS', None)
-if not NTFY_PASS:
-    logging.debug("NTFY_PASS is not set")
 
 
 task_handlers = {}
@@ -371,8 +355,19 @@ async def monitor(proxmox_host=None, proxmox_port=None, proxmox_user=None,
     await process_task
 
 if __name__ == "__main__":
+    # Initialize logging first so we can log configuration and errors
     log_level = os.getenv('LOG_LEVEL', "INFO")
+    logging.basicConfig(
+        format='%(asctime)s %(levelname)s %(message)s',
+        level=log_level,
+        stream=sys.stdout)
     
+    # Validate Ntfy server configuration
+    if not NTFY_SERVER_URL:
+        logging.error("Mandatory environment variable NTFY_SERVER_URL is not set")
+        sys.exit(1)
+    
+    # Validate Proxmox configuration
     proxmox_api_url = os.getenv('PROXMOX_API_URL', None)
     if not proxmox_api_url:
         logging.error("Mandatory environment variable PROXMOX_API_URL is not set")
@@ -388,11 +383,8 @@ if __name__ == "__main__":
         logging.error(f"Invalid PROXMOX_PORT value: {proxmox_port}, must be an integer")
         sys.exit(1)
 
-    verify_ssl = os.getenv('VERIFY_SSL', False)#
+    verify_ssl = os.getenv('VERIFY_SSL', 'False')
     verify_ssl = verify_ssl.lower() in ('true', '1', 'yes', 'on')
-    if not isinstance(verify_ssl, bool):
-        logging.error(f"Invalid VERIFY_SSL value: {verify_ssl}, must be a boolean")
-        sys.exit(1)
     logging.info(f"VERIFY_SSL: {verify_ssl}")
 
     proxmox_user = os.getenv('PROXMOX_USER', None)
@@ -408,12 +400,6 @@ if __name__ == "__main__":
         logging.error("For password authentication, set PROXMOX_PASS")
         logging.error("For token authentication, set PROXMOX_TOKEN_NAME and PROXMOX_TOKEN_VALUE")
         sys.exit(1)
-    
-    # Initialize logging first so we can log configuration
-    logging.basicConfig(
-        format='%(asctime)s %(levelname)s %(message)s',
-        level=log_level,
-        stream=sys.stdout)
     
     logging.info(f"Proxmox configuration: proxmox_api_url={proxmox_api_url}, proxmox_port={proxmox_port}, proxmox_user={proxmox_user}, proxmox_token_name={proxmox_token_name}")
 
