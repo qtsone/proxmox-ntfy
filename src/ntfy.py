@@ -191,9 +191,14 @@ async def get_proxmox_tasks(proxmox: proxmoxer.ProxmoxAPI, since: int, allowed_n
             else:
                 # Re-raise other ResourceExceptions
                 raise
-        except Exception as e:
-            logging.error(f"Error fetching tasks from node {node_name}: {e}")
+        except (aiohttp.ClientError, asyncio.TimeoutError) as e:
+            # Network/connection errors - log and continue with other nodes
+            logging.error(f"Network error fetching tasks from node {node_name}: {e}")
             # Continue with other nodes
+        except Exception as e:
+            # Unexpected errors - log but continue to avoid stopping monitoring
+            logging.error(f"Unexpected error fetching tasks from node {node_name}: {e}")
+            # Continue with other nodes to maintain monitoring of remaining nodes
     return tasks
 
 async def get_task_status(proxmox: proxmoxer.ProxmoxAPI, node: str, task_id: str) -> Dict[str, Any]:
